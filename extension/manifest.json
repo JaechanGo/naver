@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "네이버 블로그 AI 글쓰기",
+  "version": "1.0.0",
+  "description": "현진리 스타일로 네이버 블로그 리뷰를 자동 생성합니다",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["https://blog.naver.com/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://blog.naver.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

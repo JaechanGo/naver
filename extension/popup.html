@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 블로그 글쓰기</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>✍️ AI 블로그 글쓰기</h1>
+      <p class="subtitle">현진리 스타일 리뷰 생성기</p>
+    </header>
+
+    <!-- 설정 -->
+    <div id="settings-bar">
+      <label>API 서버</label>
+      <input type="text" id="api-url" placeholder="https://your-app.vercel.app" />
+      <button id="save-url" class="btn-small">저장</button>
+    </div>
+
+    <!-- Step 1: 사진 -->
+    <section id="step1" class="step active">
+      <div class="step-header">
+        <span class="step-num">1</span>
+        <span>사진 업로드</span>
+      </div>
+      <div id="photo-drop" class="drop-zone">
+        <p>📷 사진을 드래그하거나 클릭해서 선택</p>
+        <input type="file" id="photo-input" multiple accept="image/*" />
+      </div>
+      <div id="photo-preview" class="photo-grid"></div>
+      <button id="to-step2" class="btn-primary" disabled>다음 →</button>
+    </section>
+
+    <!-- Step 2: 정보 입력 -->
+    <section id="step2" class="step">
+      <div class="step-header">
+        <span class="step-num">2</span>
+        <span>정보 입력</span>
+      </div>
+      <div class="form-group">
+        <label>이름 (가게/제품/장소)</label>
+        <input type="text" id="store-name" placeholder="예: 카페 희다" />
+      </div>
+      <div class="form-group">
+        <label>위치</label>
+        <input type="text" id="store-address" placeholder="예: 부천시 신중동" />
+      </div>
+      <div class="form-group">
+        <label>방문/구매 날짜</label>
+        <input type="text" id="visit-date" placeholder="예: 2026.05.23" />
+      </div>
+      <div class="form-group">
+        <label>주문/구매/체험 항목</label>
+        <input type="text" id="store-menu" placeholder="예: 아메리카노, 크로크무슈" />
+      </div>
+      <div class="form-group">
+        <label>주제 메모</label>
+        <textarea id="topic-hint" rows="3" placeholder="어떤 리뷰인지 자유롭게 메모"></textarea>
+      </div>
+      <div class="btn-row">
+        <button id="back-step1" class="btn-secondary">← 이전</button>
+        <button id="generate-btn" class="btn-primary">🚀 글 생성</button>
+      </div>
+    </section>
+
+    <!-- Step 3: 결과 -->
+    <section id="step3" class="step">
+      <div class="step-header">
+        <span class="step-num">3</span>
+        <span>생성 결과</span>
+      </div>
+      <div id="loading" class="hidden">
+        <div class="spinner"></div>
+        <p id="loading-text">사진 분석 중...</p>
+      </div>
+      <div id="result-area" class="hidden">
+        <textarea id="result-text" rows="15" readonly></textarea>
+        <div class="btn-row">
+          <button id="copy-btn" class="btn-primary">📋 복사</button>
+          <button id="insert-btn" class="btn-secondary">📝 편집기에 삽입</button>
+        </div>
+        <div id="copy-toast" class="toast hidden">복사됨!</div>
+      </div>
+      <div id="error-area" class="hidden">
+        <p class="error-text" id="error-msg"></p>
+        <button id="retry-btn" class="btn-secondary">다시 시도</button>
+      </div>
+      <button id="back-step2" class="btn-secondary">← 처음부터</button>
+    </section>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
