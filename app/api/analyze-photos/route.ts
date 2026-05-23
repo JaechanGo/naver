@@ -1,0 +1,120 @@
+import { NextResponse } from "next/server";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getAnthropic, CLAUDE_MODEL } from "@/lib/anthropic";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+type RequestBody = {
+  photos: { id: string; dataUrl: string; userNote?: string }[];
+  storeInfo: {
+    name?: string;
+    address?: string;
+    visitDate?: string;
+    menu?: string;
+  };
+  topicHint: string;
+};
+
+type Caption = {
+  photo_id: string;
+  caption: string;
+  food_name_guess?: string;
+};
+
+type ResponseBody = {
+  captions: Caption[];
+  tone_suggestion: string;
+};
+
+const SYSTEM_PROMPT = `당신은 한국 네이버 블로그용 리뷰 작성을 돕는 어시스턴트입니다.
+사용자가 올린 사진들을 분석해서 각 사진을 한 문장으로 묘사하고, 사진 속 핵심 대상(음식·제품·장소·물체 등)의 이름이 추정 가능하면 함께 답하세요.
+사용자가 어떤 종류의 리뷰를 쓰는지는 사용자가 제공한 [참고 정보]의 주제 메모로부터 추론하세요. 음식점·맛집·제품·장소·전시·경험 등 어떤 주제든 다룰 수 있습니다.
+또한 전체 글의 톤을 어떻게 잡으면 좋을지 한 문장으로 제안하세요.
+
+응답은 반드시 다음 JSON 형식만 출력하세요 (다른 텍스트 금지):
+{
+  "captions": [
+    {"photo_id": "...", "caption": "...", "food_name_guess": "..."}
+  ],
+  "tone_suggestion": "..."
+}
+
+food_name_guess 필드명은 호환성을 위해 유지하지만 음식이 아닌 제품·장소도 같은 필드에 추정 이름을 넣으세요. 추정이 어려우면 생략하세요.`;
+
+export async function POST(req: Request) {
+  let body: RequestBody;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  if (!body.photos || body.photos.length === 0) {
+    return NextResponse.json({ error: "사진이 없습니다" }, { status: 400 });
+  }
+
+  const client = getAnthropic();
+
+  const userContent: Anthropic.Messages.ContentBlockParam[] = [];
+
+  for (const p of body.photos) {
+    const match = p.dataUrl.match(/^data:(image\/[a-z]+);base64,(.+)$/);
+    if (!match) continue;
+    userContent.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: match[1] as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+        data: match[2],
+      },
+    });
+    userContent.push({
+      type: "text",
+      text: `(위 사진 ID: ${p.id}${p.userNote ? ` / 사용자 메모: ${p.userNote}` : ""})`,
+    });
+  }
+
+  const ctxLines: string[] = [];
+  if (body.storeInfo.name) ctxLines.push(`이름: ${body.storeInfo.name}`);
+  if (body.storeInfo.address) ctxLines.push(`위치: ${body.storeInfo.address}`);
+  if (body.storeInfo.visitDate) ctxLines.push(`날짜: ${body.storeInfo.visitDate}`);
+  if (body.storeInfo.menu) ctxLines.push(`주문/구매/체험 항목: ${body.storeInfo.menu}`);
+  if (body.topicHint) ctxLines.push(`주제 메모: ${body.topicHint}`);
+  userContent.push({
+    type: "text",
+    text: `\n[참고 정보]\n${ctxLines.join("\n")}\n\n위 사진들을 분석해서 JSON 형식으로 응답하세요.`,
+  });
+
+  let resp;
+  try {
+    resp = await client.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 2048,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userContent }],
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Claude 호출 실패";
+    return NextResponse.json({ error: msg }, { status: 502 });
+  }
+
+  const textBlock = resp.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    return NextResponse.json({ error: "응답 없음" }, { status: 502 });
+  }
+
+  let parsed: ResponseBody;
+  try {
+    const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("JSON 부분 없음");
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    return NextResponse.json(
+      { error: "AI 응답 형식 오류", raw: textBlock.text },
+      { status: 502 },
+    );
+  }
+
+  return NextResponse.json(parsed);
+}
