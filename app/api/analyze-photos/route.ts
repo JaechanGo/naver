@@ -53,10 +53,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "사진이 없습니다" }, { status: 400 });
   }
 
-  const model = getGeminiModel({
-    maxOutputTokens: 2048,
-    responseMimeType: "application/json",
-  });
+  const model = getGeminiModel({ maxOutputTokens: 2048 });
 
   const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
 
@@ -86,22 +83,27 @@ export async function POST(req: Request) {
 
   let resultText: string;
   try {
+    console.log("[analyze-photos] calling Gemini...");
     const result = await model.generateContent({
       contents: [{ role: "user", parts }],
       systemInstruction: SYSTEM_PROMPT,
     });
+    console.log("[analyze-photos] got response");
     const response = result.response;
     const candidate = response.candidates?.[0];
     if (!candidate || !candidate.content?.parts?.length) {
-      const reason = candidate?.finishReason || "UNKNOWN";
+      const reason = candidate?.finishReason || "NO_CANDIDATE";
+      console.error("[analyze-photos] no candidate, reason:", reason);
       return NextResponse.json(
         { error: `AI 응답 없음 (reason: ${reason})` },
         { status: 502 },
       );
     }
     resultText = response.text();
+    console.log("[analyze-photos] text length:", resultText.length);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Gemini 호출 실패";
+    console.error("[analyze-photos] error:", msg);
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 
@@ -111,7 +113,9 @@ export async function POST(req: Request) {
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("JSON 부분 없음");
     parsed = JSON.parse(jsonMatch[0]);
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "파싱 실패";
+    console.error("[analyze-photos] parse error:", msg, "raw:", resultText.slice(0, 200));
     return NextResponse.json(
       { error: "AI 응답 형식 오류", raw: resultText },
       { status: 502 },
