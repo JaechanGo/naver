@@ -1,4 +1,4 @@
-import { getAnthropic, CLAUDE_MODEL } from "@/lib/anthropic";
+import { getGeminiModel } from "@/lib/gemini";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -109,7 +109,7 @@ export async function POST(req: Request) {
     });
   }
 
-  const client = getAnthropic();
+  const model = getGeminiModel({ temperature: 0.7, maxOutputTokens: 4096 });
 
   const lines: string[] = [];
   lines.push("[사진 분석 결과]");
@@ -136,21 +136,19 @@ export async function POST(req: Request) {
   }
   lines.push("위 정보를 바탕으로 네이버 블로그용 리뷰를 마크다운으로 작성하세요.");
 
-  const stream = client.messages.stream({
-    model: CLAUDE_MODEL,
-    max_tokens: 4096,
-    temperature: 0.7,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: lines.join("\n") }],
+  const result = await model.generateContentStream({
+    contents: [{ role: "user", parts: [{ text: lines.join("\n") }] }],
+    systemInstruction: { role: "system", parts: [{ text: SYSTEM_PROMPT }] },
   });
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
       try {
-        for await (const event of stream) {
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            controller.enqueue(encoder.encode(event.delta.text));
+        for await (const chunk of result.stream) {
+          const text = chunk.text();
+          if (text) {
+            controller.enqueue(encoder.encode(text));
           }
         }
         controller.close();

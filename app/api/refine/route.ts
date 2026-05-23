@@ -1,4 +1,4 @@
-import { getAnthropic, CLAUDE_MODEL } from "@/lib/anthropic";
+import { getGeminiModel } from "@/lib/gemini";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     });
   }
 
-  const client = getAnthropic();
+  const model = getGeminiModel({ temperature: 0.7, maxOutputTokens: 1024 });
   const userText = [
     "[전체 본문]",
     body.fullBody,
@@ -54,21 +54,19 @@ export async function POST(req: Request) {
     "선택 영역만 지시에 따라 다시 작성하세요. 교체될 텍스트만 출력.",
   ].join("\n");
 
-  const stream = client.messages.stream({
-    model: CLAUDE_MODEL,
-    max_tokens: 1024,
-    temperature: 0.7,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userText }],
+  const result = await model.generateContentStream({
+    contents: [{ role: "user", parts: [{ text: userText }] }],
+    systemInstruction: { role: "system", parts: [{ text: SYSTEM_PROMPT }] },
   });
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
       try {
-        for await (const event of stream) {
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            controller.enqueue(encoder.encode(event.delta.text));
+        for await (const chunk of result.stream) {
+          const text = chunk.text();
+          if (text) {
+            controller.enqueue(encoder.encode(text));
           }
         }
         controller.close();

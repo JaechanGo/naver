@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import type Anthropic from "@anthropic-ai/sdk";
-import { getAnthropic, CLAUDE_MODEL } from "@/lib/anthropic";
+import { getGeminiModel } from "@/lib/gemini";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -54,23 +53,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "사진이 없습니다" }, { status: 400 });
   }
 
-  const client = getAnthropic();
+  const model = getGeminiModel({ maxOutputTokens: 2048 });
 
-  const userContent: Anthropic.Messages.ContentBlockParam[] = [];
+  const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
 
   for (const p of body.photos) {
     const match = p.dataUrl.match(/^data:(image\/[a-z]+);base64,(.+)$/);
     if (!match) continue;
-    userContent.push({
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: match[1] as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+    parts.push({
+      inlineData: {
+        mimeType: match[1],
         data: match[2],
       },
     });
-    userContent.push({
-      type: "text",
+    parts.push({
       text: `(위 사진 ID: ${p.id}${p.userNote ? ` / 사용자 메모: ${p.userNote}` : ""})`,
     });
   }
@@ -81,37 +77,30 @@ export async function POST(req: Request) {
   if (body.storeInfo.visitDate) ctxLines.push(`날짜: ${body.storeInfo.visitDate}`);
   if (body.storeInfo.menu) ctxLines.push(`주문/구매/체험 항목: ${body.storeInfo.menu}`);
   if (body.topicHint) ctxLines.push(`주제 메모: ${body.topicHint}`);
-  userContent.push({
-    type: "text",
+  parts.push({
     text: `\n[참고 정보]\n${ctxLines.join("\n")}\n\n위 사진들을 분석해서 JSON 형식으로 응답하세요.`,
   });
 
-  let resp;
+  let resultText: string;
   try {
-    resp = await client.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 2048,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userContent }],
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts }],
+      systemInstruction: { role: "system", parts: [{ text: SYSTEM_PROMPT }] },
     });
+    resultText = result.response.text();
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Claude 호출 실패";
+    const msg = e instanceof Error ? e.message : "Gemini 호출 실패";
     return NextResponse.json({ error: msg }, { status: 502 });
-  }
-
-  const textBlock = resp.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    return NextResponse.json({ error: "응답 없음" }, { status: 502 });
   }
 
   let parsed: ResponseBody;
   try {
-    const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+    const jsonMatch = resultText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("JSON 부분 없음");
     parsed = JSON.parse(jsonMatch[0]);
   } catch {
     return NextResponse.json(
-      { error: "AI 응답 형식 오류", raw: textBlock.text },
+      { error: "AI 응답 형식 오류", raw: resultText },
       { status: 502 },
     );
   }
