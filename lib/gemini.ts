@@ -15,6 +15,7 @@ export const GEMINI_MODEL = "gemini-2.5-flash";
 export function getGeminiModel(config?: {
   temperature?: number;
   maxOutputTokens?: number;
+  responseMimeType?: string;
 }): GenerativeModel {
   const client = getClient();
   return client.getGenerativeModel({
@@ -22,6 +23,7 @@ export function getGeminiModel(config?: {
     generationConfig: {
       temperature: config?.temperature,
       maxOutputTokens: config?.maxOutputTokens,
+      responseMimeType: config?.responseMimeType,
     },
   });
 }

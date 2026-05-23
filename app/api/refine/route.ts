@@ -87,7 +87,7 @@ export async function POST(req: Request) {
 
   const result = await model.generateContentStream({
     contents: [{ role: "user", parts: [{ text: userText }] }],
-    systemInstruction: { role: "system", parts: [{ text: SYSTEM_PROMPT }] },
+    systemInstruction: SYSTEM_PROMPT,
   });
 
   const encoder = new TextEncoder();
