@@ -13,6 +13,7 @@ import {
 import { SortableContext, arrayMove, rectSortingStrategy } from "@dnd-kit/sortable";
 import type { Photo } from "@/lib/draft";
 import { resizeImageToDataUrl, dataUrlByteLength } from "@/lib/imageResize";
+import { extractGps } from "@/lib/exif";
 import { PhotoTile } from "@/components/PhotoTile";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { useToast } from "@/components/ui/Toast";
@@ -44,8 +45,11 @@ export function Step1Photos({ photos, onChange, onNext }: Props) {
     for (const file of Array.from(files)) {
       if (!file.type.startsWith("image/")) continue;
       try {
-        const dataUrl = await resizeImageToDataUrl(file);
-        newPhotos.push({ id: crypto.randomUUID(), dataUrl });
+        const [dataUrl, gps] = await Promise.all([
+          resizeImageToDataUrl(file),
+          extractGps(file),
+        ]);
+        newPhotos.push({ id: crypto.randomUUID(), dataUrl, gps: gps ?? undefined });
       } catch {
         toast.show("error", `사진 ${file.name} 처리 실패`);
       }

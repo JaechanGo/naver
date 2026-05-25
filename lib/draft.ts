@@ -5,6 +5,7 @@ export type Photo = {
   dataUrl: string;
   userNote?: string;
   aiCaption?: string;
+  gps?: { lat: number; lng: number };
 };
 
 export type StoreInfo = {
@@ -12,6 +13,8 @@ export type StoreInfo = {
   address?: string;
   visitDate?: string;
   menu?: string;
+  phone?: string;
+  hours?: string;
 };
 
 export type Draft = {

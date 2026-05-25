@@ -87,6 +87,7 @@ export function WizardContainer() {
           <Step2Info
             storeInfo={draft.storeInfo}
             topicHint={draft.topicHint}
+            photos={draft.photos}
             onChangeStore={(storeInfo) => update({ storeInfo })}
             onChangeTopic={(topicHint) => update({ topicHint })}
             onNext={() => update({ step: 3 })}

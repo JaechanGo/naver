@@ -1,19 +1,44 @@
 "use client";
-import type { StoreInfo } from "@/lib/draft";
+import { useState, useEffect } from "react";
+import { Search, MapPin, Loader2 } from "lucide-react";
+import type { StoreInfo, Photo } from "@/lib/draft";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Card } from "@/components/ui/Card";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
 
+type PlaceResult = {
+  name: string;
+  address: string;
+  phone: string;
+  hours: string;
+  category: string;
+};
+
 type Props = {
   storeInfo: StoreInfo;
   topicHint: string;
+  photos: Photo[];
   onChangeStore: (info: StoreInfo) => void;
   onChangeTopic: (topic: string) => void;
   onNext: () => void;
 };
 
-export function Step2Info({ storeInfo, topicHint, onChangeStore, onChangeTopic, onNext }: Props) {
+export function Step2Info({ storeInfo, topicHint, photos, onChangeStore, onChangeTopic, onNext }: Props) {
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState<PlaceResult[]>([]);
+  const [showResults, setShowResults] = useState(false);
+  const [gpsDetected, setGpsDetected] = useState(false);
+
+  const photoGps = photos.find((p) => p.gps)?.gps ?? null;
+
+  useEffect(() => {
+    if (photoGps && !gpsDetected && !storeInfo.name) {
+      setGpsDetected(true);
+      searchByGps(photoGps.lat, photoGps.lng);
+    }
+  }, [photoGps]);
+
   function handleNext() {
     if (!topicHint.trim()) {
       const ok = confirm(
@@ -28,6 +53,57 @@ export function Step2Info({ storeInfo, topicHint, onChangeStore, onChangeTopic, 
     onChangeStore({ ...storeInfo, [key]: value });
   }
 
+  async function searchByName() {
+    const q = storeInfo.name?.trim();
+    if (!q) return;
+    setSearching(true);
+    setShowResults(true);
+    try {
+      const res = await fetch("/api/search-place", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setResults(data.results ?? []);
+    } catch {
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function searchByGps(lat: number, lng: number) {
+    setSearching(true);
+    setShowResults(true);
+    try {
+      const res = await fetch("/api/search-place", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat, lng, query: storeInfo.name || undefined }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setResults(data.results ?? []);
+    } catch {
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function selectPlace(place: PlaceResult) {
+    onChangeStore({
+      ...storeInfo,
+      name: place.name,
+      address: place.address,
+      phone: place.phone || storeInfo.phone,
+      hours: place.hours || storeInfo.hours,
+    });
+    setShowResults(false);
+  }
+
   const today = new Date().toISOString().slice(0, 10);
 
   return (
@@ -37,16 +113,78 @@ export function Step2Info({ storeInfo, topicHint, onChangeStore, onChangeTopic, 
         <p className="text-sm text-stone-600">비워두면 AI 가 추측합니다</p>
       </div>
 
+      {photoGps && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">
+          <MapPin className="h-4 w-4 shrink-0" />
+          <span>사진에서 GPS 위치 감지됨</span>
+          <button
+            type="button"
+            onClick={() => searchByGps(photoGps.lat, photoGps.lng)}
+            className="ml-auto text-emerald-600 font-medium hover:underline"
+          >
+            다시 검색
+          </button>
+        </div>
+      )}
+
       <Card>
         <div className="space-y-3">
           <Field label="이름">
-            <Input
-              type="text"
-              value={storeInfo.name ?? ""}
-              onChange={(e) => updateStore("name", e.target.value)}
-              placeholder="예: ○○ 가게 / ○○ 제품 / ○○ 장소"
-            />
+            <div className="flex gap-2">
+              <Input
+                type="text"
+                value={storeInfo.name ?? ""}
+                onChange={(e) => updateStore("name", e.target.value)}
+                placeholder="예: ○○ 가게 / ○○ 제품 / ○○ 장소"
+                onKeyDown={(e) => e.key === "Enter" && searchByName()}
+              />
+              <button
+                type="button"
+                onClick={searchByName}
+                disabled={searching || !storeInfo.name?.trim()}
+                className="shrink-0 h-11 w-11 rounded-lg bg-amber-500 text-white flex items-center justify-center hover:bg-amber-600 disabled:bg-stone-300 disabled:cursor-not-allowed transition-colors"
+              >
+                {searching ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           </Field>
+
+          {showResults && (
+            <div className="rounded-lg border border-stone-200 overflow-hidden">
+              {searching ? (
+                <div className="flex items-center justify-center gap-2 py-4 text-sm text-stone-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  장소 검색 중...
+                </div>
+              ) : results.length === 0 ? (
+                <div className="py-3 px-4 text-sm text-stone-500">검색 결과가 없습니다</div>
+              ) : (
+                results.map((r, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => selectPlace(r)}
+                    className="w-full text-left px-4 py-3 hover:bg-amber-50 border-b border-stone-100 last:border-b-0 transition-colors"
+                  >
+                    <div className="font-medium text-sm">{r.name}</div>
+                    <div className="text-xs text-stone-500 mt-0.5">{r.address}</div>
+                    {(r.phone || r.hours) && (
+                      <div className="text-xs text-stone-400 mt-0.5">
+                        {r.phone && <span>{r.phone}</span>}
+                        {r.phone && r.hours && <span> · </span>}
+                        {r.hours && <span>{r.hours}</span>}
+                      </div>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+
           <Field label="위치 (선택)">
             <Input
               type="text"
@@ -70,6 +208,22 @@ export function Step2Info({ storeInfo, topicHint, onChangeStore, onChangeTopic, 
               rows={3}
             />
           </Field>
+          {(storeInfo.phone || storeInfo.hours) && (
+            <div className="rounded-lg bg-stone-50 px-3 py-2 text-sm text-stone-600 space-y-1">
+              {storeInfo.phone && (
+                <div className="flex items-center gap-2">
+                  <span className="text-stone-400 text-xs font-medium w-16">전화</span>
+                  <span>{storeInfo.phone}</span>
+                </div>
+              )}
+              {storeInfo.hours && (
+                <div className="flex items-center gap-2">
+                  <span className="text-stone-400 text-xs font-medium w-16">영업시간</span>
+                  <span>{storeInfo.hours}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </Card>
 
