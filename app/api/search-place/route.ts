@@ -7,6 +7,7 @@ type RequestBody = {
   query?: string;
   lat?: number;
   lng?: number;
+  photoHint?: string;
 };
 
 export type PlaceResult = {
@@ -43,7 +44,10 @@ export async function POST(req: Request) {
 
   let prompt: string;
   if (body.lat && body.lng) {
-    prompt = `위도 ${body.lat}, 경도 ${body.lng} 좌표 근처의 실제 존재하는 장소를 Google 검색으로 찾아줘.
+    const hint = body.photoHint
+      ? `\n참고로 사진에는 다음과 같은 것이 보입니다: ${body.photoHint}\n이 특징에 맞는 장소를 우선 찾아줘.`
+      : "";
+    prompt = `위도 ${body.lat}, 경도 ${body.lng} 좌표 근처의 실제 존재하는 장소를 Google 검색으로 찾아줘.${hint}
 
 중요 규칙:
 - 반드시 Google 검색 결과에서 확인된 실제 장소만 답해줘

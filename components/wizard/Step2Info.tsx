@@ -42,10 +42,31 @@ export function Step2Info({ storeInfo, topicHint, photos, onChangeStore, onChang
     if (!photoGps) return;
     setGpsLoading(true);
     try {
+      let photoHint: string | undefined;
+      const gpsPhoto = photos.find((p) => p.gps);
+      if (gpsPhoto) {
+        try {
+          const hintRes = await fetch("/api/analyze-photos", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              photos: [{ id: gpsPhoto.id, dataUrl: gpsPhoto.dataUrl }],
+              storeInfo: {},
+              topicHint: "",
+            }),
+          });
+          if (hintRes.ok) {
+            const hintData = await hintRes.json();
+            const captions = hintData.captions?.map((c: any) => c.caption).join(", ");
+            if (captions) photoHint = captions;
+          }
+        } catch {}
+      }
+
       const res = await fetch("/api/search-place", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat: photoGps.lat, lng: photoGps.lng }),
+        body: JSON.stringify({ lat: photoGps.lat, lng: photoGps.lng, photoHint }),
       });
       if (!res.ok) throw new Error();
       const data = await res.json();
