@@ -1,7 +1,7 @@
 import { marked } from "marked";
 import type { Photo } from "@/lib/draft";
 
-const PHOTO_TOKEN_RE = /!\[\]\(([a-zA-Z0-9_-]+)\)/g;
+const PHOTO_TOKEN_RE = /!\[\]\((?:photo_id=)?([a-zA-Z0-9_-]+)\)/g;
 
 export function extractPhotoTokens(markdown: string): string[] {
   const ids: string[] = [];
