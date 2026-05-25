@@ -35,7 +35,8 @@ export function Step2Info({ storeInfo, topicHint, photos, onChangeStore, onChang
   const [searchQuery, setSearchQuery] = useState("");
   const [placed, setPlaced] = useState(false);
 
-  const photoGps = photos.find((p) => p.gps)?.gps ?? null;
+  const gpsPhotos = photos.filter((p) => p.gps);
+  const photoGps = getMedianGps(photos);
 
   const loadGpsResults = useCallback(async () => {
     if (!photoGps) return;
@@ -140,7 +141,7 @@ export function Step2Info({ storeInfo, topicHint, photos, onChangeStore, onChang
               <div>
                 <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 mb-2">
                   <MapPin className="h-3.5 w-3.5" />
-                  사진 위치 기반 추천
+                  사진 위치 기반 추천 ({gpsPhotos.length}장에서 GPS 감지)
                 </div>
                 {gpsLoading ? (
                   <div className="flex items-center gap-2 py-3 text-sm text-stone-500 justify-center">
@@ -384,4 +385,20 @@ function Field({
       {help && <p className="text-xs text-stone-500 mt-1">{help}</p>}
     </div>
   );
+}
+
+function getMedianGps(photos: Photo[]): { lat: number; lng: number } | null {
+  const coords = photos.filter((p) => p.gps).map((p) => p.gps!);
+  if (coords.length === 0) return null;
+  if (coords.length === 1) return coords[0];
+  const sorted = (arr: number[]) => [...arr].sort((a, b) => a - b);
+  const median = (arr: number[]) => {
+    const s = sorted(arr);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  };
+  return {
+    lat: median(coords.map((c) => c.lat)),
+    lng: median(coords.map((c) => c.lng)),
+  };
 }
