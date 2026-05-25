@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { getGeminiModel } from "@/lib/gemini";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -30,14 +29,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "query 또는 좌표 필요" }, { status: 400 });
   }
 
-  const client = getGeminiModel();
-  const genAI = client;
-
-  const { GoogleGenerativeAI } = await import("@google/generative-ai");
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
     return NextResponse.json({ error: "GEMINI_API_KEY is not set" }, { status: 500 });
   }
+
+  const { GoogleGenerativeAI } = await import("@google/generative-ai");
   const ai = new GoogleGenerativeAI(key);
   const model = ai.getGenerativeModel({
     model: "gemini-2.5-flash",
@@ -46,18 +43,28 @@ export async function POST(req: Request) {
 
   let prompt: string;
   if (body.lat && body.lng) {
-    prompt = `위도 ${body.lat}, 경도 ${body.lng} 좌표는 한국입니다. 이 좌표에서 가장 가까운 장소/가게/명소를 검색해서 상위 3개를 JSON 배열로 알려줘.
-각 항목: {"name": "정확한 이름", "address": "도로명 전체 주소", "phone": "전화번호 (없으면 빈문자열)", "hours": "영업시간 (없으면 빈문자열)", "category": "카테고리"}
-${body.query ? `참고로 장소 이름은 "${body.query}"일 수 있음.` : ""}
-JSON 배열만 출력. 다른 텍스트 금지.`;
+    prompt = `위도 ${body.lat}, 경도 ${body.lng} 좌표 근처의 실제 존재하는 장소를 Google 검색으로 찾아줘.
+
+중요 규칙:
+- 반드시 Google 검색 결과에서 확인된 실제 장소만 답해줘
+- 검색 결과에 나오지 않는 장소는 절대 만들지 마
+- 정보를 모르면 빈 문자열로 남겨
+- 최대 3개
+
+JSON 배열만 출력:
+[{"name":"","address":"","phone":"","hours":"","category":""}]`;
   } else {
-    prompt = `다음 장소의 정보를 Google에서 검색해줘. 네이버 지도, 카카오맵, 공식 사이트 등 다양한 소스를 참고.
+    prompt = `"${body.query}" 장소를 Google에서 검색해줘.
 
-장소: ${body.query}
+중요 규칙:
+- 반드시 Google 검색 결과에서 확인된 실제 장소만 답해줘
+- 검색 결과에 나오지 않는 장소는 절대 만들지 마
+- 정보를 모르면 빈 문자열로 남겨
+- 검색 결과가 없으면 빈 배열 [] 출력
+- 최대 3개
 
-JSON 배열로 출력 (최대 3개 후보):
-[{"name": "정확한 이름", "address": "도로명 전체 주소", "phone": "전화번호 (없으면 빈문자열)", "hours": "영업시간 (없으면 빈문자열)", "category": "카테고리"}]
-JSON만 출력. 다른 텍스트 금지.`;
+JSON 배열만 출력:
+[{"name":"","address":"","phone":"","hours":"","category":""}]`;
   }
 
   try {
@@ -70,12 +77,13 @@ JSON만 출력. 다른 텍스트 금지.`;
     if (!jsonMatch) {
       const singleMatch = cleaned.match(/\{[\s\S]*\}/);
       if (singleMatch) {
-        return NextResponse.json({ results: [JSON.parse(singleMatch[0])] });
+        const parsed = JSON.parse(singleMatch[0]);
+        if (parsed.name) return NextResponse.json({ results: [parsed] });
       }
-      return NextResponse.json({ error: "검색 결과 없음" }, { status: 404 });
+      return NextResponse.json({ results: [] });
     }
     const results: PlaceResult[] = JSON.parse(jsonMatch[0]);
-    return NextResponse.json({ results });
+    return NextResponse.json({ results: results.filter((r) => r.name) });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "검색 실패";
     console.error("[search-place] error:", msg);

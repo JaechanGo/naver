@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
-import { Search, MapPin, Loader2, Pencil, ChevronRight } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Search, MapPin, Loader2, ChevronRight } from "lucide-react";
 import type { StoreInfo, Photo } from "@/lib/draft";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
@@ -15,8 +15,6 @@ type PlaceResult = {
   category: string;
 };
 
-type InputMode = "pick" | "search" | "manual" | null;
-
 type Props = {
   storeInfo: StoreInfo;
   topicHint: string;
@@ -27,16 +25,18 @@ type Props = {
 };
 
 export function Step2Info({ storeInfo, topicHint, photos, onChangeStore, onChangeTopic, onNext }: Props) {
-  const [mode, setMode] = useState<InputMode>(null);
-  const [gpsResults, setGpsResults] = useState<PlaceResult[]>([]);
-  const [searchResults, setSearchResults] = useState<PlaceResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [gpsLoading, setGpsLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [placed, setPlaced] = useState(false);
-
   const gpsPhotos = photos.filter((p) => p.gps);
   const photoGps = getMedianGps(photos);
+  const hasGps = !!photoGps;
+
+  const [tab, setTab] = useState<"gps" | "manual">(hasGps ? "gps" : "manual");
+  const [gpsResults, setGpsResults] = useState<PlaceResult[]>([]);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<PlaceResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [placed, setPlaced] = useState(!!storeInfo.name);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadGpsResults = useCallback(async () => {
     if (!photoGps) return;
@@ -62,9 +62,7 @@ export function Step2Info({ storeInfo, topicHint, photos, onChangeStore, onChang
       setPlaced(true);
       return;
     }
-    if (photoGps) {
-      loadGpsResults();
-    }
+    if (hasGps) loadGpsResults();
   }, []);
 
   function handleNext() {
@@ -88,37 +86,41 @@ export function Step2Info({ storeInfo, topicHint, photos, onChangeStore, onChang
       hours: place.hours || undefined,
     });
     setPlaced(true);
-    setMode(null);
+    setSearchResults([]);
   }
 
   function clearPlace() {
     onChangeStore({ ...storeInfo, name: undefined, address: undefined, phone: undefined, hours: undefined });
     setPlaced(false);
-    setMode(null);
+    setSearchQuery("");
+    setSearchResults([]);
   }
 
-  async function handleSearch() {
-    if (!searchQuery.trim()) return;
-    setSearching(true);
-    try {
-      const res = await fetch("/api/search-place", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery }),
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setSearchResults(data.results ?? []);
-    } catch {
+  function handleSearchInput(q: string) {
+    setSearchQuery(q);
+    updateStore("name", q);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (q.trim().length < 2) {
       setSearchResults([]);
-    } finally {
-      setSearching(false);
+      return;
     }
-  }
-
-  function startManual() {
-    setMode("manual");
-    setPlaced(true);
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch("/api/search-place", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: q }),
+        });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setSearchResults(data.results ?? []);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 800);
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -132,146 +134,116 @@ export function Step2Info({ storeInfo, topicHint, photos, onChangeStore, onChang
 
       {/* === 장소 선택 영역 === */}
       {!placed ? (
-        <Card>
-          <div className="space-y-3">
-            <label className="block text-sm font-medium text-stone-700">장소 선택</label>
+        <>
+          <Card>
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-stone-700">장소 찾기</label>
 
-            {/* GPS 추천 */}
-            {(gpsLoading || gpsResults.length > 0) && (
-              <div>
-                <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 mb-2">
-                  <MapPin className="h-3.5 w-3.5" />
-                  사진 위치 기반 추천 ({gpsPhotos.length}장에서 GPS 감지)
-                </div>
-                {gpsLoading ? (
-                  <div className="flex items-center gap-2 py-3 text-sm text-stone-500 justify-center">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    근처 장소 검색 중...
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-emerald-200 overflow-hidden">
-                    {gpsResults.map((r, i) => (
+              {/* 라디오 탭 */}
+              <div className="grid grid-cols-2 gap-2">
+                <RadioTab
+                  active={tab === "gps"}
+                  disabled={!hasGps}
+                  onClick={() => hasGps && setTab("gps")}
+                  icon={<MapPin className="h-4 w-4" />}
+                  label="사진 위치로 찾기"
+                  sub={hasGps ? `${gpsPhotos.length}장 GPS 감지` : "GPS 없음"}
+                />
+                <RadioTab
+                  active={tab === "manual"}
+                  onClick={() => setTab("manual")}
+                  icon={<Search className="h-4 w-4" />}
+                  label="직접 입력"
+                  sub="이름으로 검색"
+                />
+              </div>
+
+              {/* GPS 탭 내용 */}
+              {tab === "gps" && (
+                <div>
+                  {gpsLoading ? (
+                    <div className="flex items-center gap-2 py-6 text-sm text-stone-500 justify-center">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      근처 장소 검색 중...
+                    </div>
+                  ) : gpsResults.length === 0 ? (
+                    <div className="py-4 text-center text-sm text-stone-500">
+                      <p>주변 장소를 찾지 못했습니다</p>
                       <button
-                        key={i}
                         type="button"
-                        onClick={() => selectPlace(r)}
-                        className="w-full text-left px-4 py-3 hover:bg-emerald-50 border-b border-emerald-100 last:border-b-0 transition-colors flex items-center gap-3"
+                        onClick={() => setTab("manual")}
+                        className="mt-2 text-amber-600 font-medium hover:underline text-xs"
                       >
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm">{r.name}</div>
-                          <div className="text-xs text-stone-500 mt-0.5 truncate">{r.address}</div>
-                          {(r.phone || r.hours) && (
-                            <div className="text-xs text-stone-400 mt-0.5 truncate">
-                              {[r.phone, r.hours].filter(Boolean).join(" · ")}
-                            </div>
-                          )}
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-stone-300 shrink-0" />
+                        직접 입력으로 전환
                       </button>
-                    ))}
+                    </div>
+                  ) : (
+                    <PlaceList results={gpsResults} onSelect={selectPlace} />
+                  )}
+                </div>
+              )}
+
+              {/* 직접 입력 탭 내용 */}
+              {tab === "manual" && (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => handleSearchInput(e.target.value)}
+                      placeholder="가게/장소 이름을 입력하세요"
+                      autoFocus
+                    />
+                    {searching && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <Loader2 className="h-4 w-4 animate-spin text-stone-400" />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )}
 
-            {/* 구분선 */}
-            {gpsResults.length > 0 && (
-              <div className="flex items-center gap-3 text-xs text-stone-400">
-                <div className="flex-1 border-t border-stone-200" />
-                또는
-                <div className="flex-1 border-t border-stone-200" />
-              </div>
-            )}
+                  {searchResults.length > 0 && (
+                    <PlaceList results={searchResults} onSelect={selectPlace} />
+                  )}
 
-            {/* 검색 / 직접입력 버튼 */}
-            {mode !== "search" ? (
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setMode("search")}
-                  className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg border border-stone-200 hover:bg-stone-50 text-sm font-medium transition-colors"
-                >
-                  <Search className="h-4 w-4 text-amber-500" />
-                  이름으로 검색
+                  {searchQuery.trim().length >= 2 && !searching && searchResults.length === 0 && (
+                    <p className="text-xs text-stone-400 text-center py-2">검색 결과가 없습니다. 아래에서 직접 입력하세요.</p>
+                  )}
+                </div>
+              )}
+
+              {/* 건너뛰기 */}
+              <div className="flex items-center gap-3 text-xs text-stone-400 pt-1">
+                <div className="flex-1 border-t border-stone-200" />
+                <button type="button" onClick={() => setPlaced(true)} className="hover:text-stone-600">
+                  건너뛰기 (AI가 추측)
                 </button>
-                <button
-                  type="button"
-                  onClick={startManual}
-                  className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg border border-stone-200 hover:bg-stone-50 text-sm font-medium transition-colors"
-                >
-                  <Pencil className="h-4 w-4 text-stone-400" />
-                  직접 입력
-                </button>
+                <div className="flex-1 border-t border-stone-200" />
               </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex gap-2">
+            </div>
+          </Card>
+
+          {/* 직접 입력 시 나머지 필드 */}
+          {tab === "manual" && (
+            <Card>
+              <div className="space-y-3">
+                <Field label="위치 (선택)">
                   <Input
                     type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="가게/장소 이름 입력"
-                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                    autoFocus
+                    value={storeInfo.address ?? ""}
+                    onChange={(e) => updateStore("address", e.target.value)}
+                    placeholder="예: 서울 강남구 / 구매처 / 위치"
                   />
-                  <button
-                    type="button"
-                    onClick={handleSearch}
-                    disabled={searching || !searchQuery.trim()}
-                    className="shrink-0 h-11 w-11 rounded-lg bg-amber-500 text-white flex items-center justify-center hover:bg-amber-600 disabled:bg-stone-300 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  </button>
-                </div>
-                {searching && (
-                  <div className="flex items-center gap-2 py-3 text-sm text-stone-500 justify-center">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    검색 중...
-                  </div>
-                )}
-                {!searching && searchResults.length > 0 && (
-                  <div className="rounded-lg border border-stone-200 overflow-hidden">
-                    {searchResults.map((r, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => selectPlace(r)}
-                        className="w-full text-left px-4 py-3 hover:bg-amber-50 border-b border-stone-100 last:border-b-0 transition-colors flex items-center gap-3"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm">{r.name}</div>
-                          <div className="text-xs text-stone-500 mt-0.5 truncate">{r.address}</div>
-                          {(r.phone || r.hours) && (
-                            <div className="text-xs text-stone-400 mt-0.5 truncate">
-                              {[r.phone, r.hours].filter(Boolean).join(" · ")}
-                            </div>
-                          )}
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-stone-300 shrink-0" />
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => { setMode(null); setSearchResults([]); }}
-                  className="text-xs text-stone-400 hover:text-stone-600"
-                >
-                  ← 돌아가기
-                </button>
+                </Field>
+                <Field label="날짜">
+                  <Input type="date" value={storeInfo.visitDate ?? today} onChange={(e) => updateStore("visitDate", e.target.value)} />
+                </Field>
+                <Field label="주문/구매/체험 항목">
+                  <Textarea value={storeInfo.menu ?? ""} onChange={(e) => updateStore("menu", e.target.value)} placeholder="예: 갈비탕 1 / 에어팟 프로 2 / 콘서트 R석" rows={3} />
+                </Field>
               </div>
-            )}
-
-            {/* 건너뛰기 */}
-            <button
-              type="button"
-              onClick={() => setPlaced(true)}
-              className="w-full text-center text-xs text-stone-400 hover:text-stone-600 py-1"
-            >
-              건너뛰기 (AI가 추측)
-            </button>
-          </div>
-        </Card>
+            </Card>
+          )}
+        </>
       ) : (
         /* === 장소 선택 완료 후 === */
         <Card>
@@ -287,63 +259,24 @@ export function Step2Info({ storeInfo, topicHint, photos, onChangeStore, onChang
                     </div>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={clearPlace}
-                  className="text-xs text-amber-600 hover:underline shrink-0"
-                >
+                <button type="button" onClick={clearPlace} className="text-xs text-amber-600 hover:underline shrink-0">
                   변경
                 </button>
               </div>
             ) : (
               <div className="flex items-center justify-between">
                 <span className="text-sm text-stone-500">장소 미선택 (AI가 추측)</span>
-                <button
-                  type="button"
-                  onClick={() => setPlaced(false)}
-                  className="text-xs text-amber-600 hover:underline"
-                >
+                <button type="button" onClick={() => setPlaced(false)} className="text-xs text-amber-600 hover:underline">
                   선택하기
                 </button>
               </div>
             )}
 
-            {mode === "manual" && (
-              <>
-                <Field label="이름">
-                  <Input
-                    type="text"
-                    value={storeInfo.name ?? ""}
-                    onChange={(e) => updateStore("name", e.target.value)}
-                    placeholder="예: ○○ 가게 / ○○ 제품 / ○○ 장소"
-                    autoFocus
-                  />
-                </Field>
-                <Field label="위치 (선택)">
-                  <Input
-                    type="text"
-                    value={storeInfo.address ?? ""}
-                    onChange={(e) => updateStore("address", e.target.value)}
-                    placeholder="예: 서울 강남구 / 구매처 / 위치"
-                  />
-                </Field>
-              </>
-            )}
-
             <Field label="날짜">
-              <Input
-                type="date"
-                value={storeInfo.visitDate ?? today}
-                onChange={(e) => updateStore("visitDate", e.target.value)}
-              />
+              <Input type="date" value={storeInfo.visitDate ?? today} onChange={(e) => updateStore("visitDate", e.target.value)} />
             </Field>
             <Field label="주문/구매/체험 항목">
-              <Textarea
-                value={storeInfo.menu ?? ""}
-                onChange={(e) => updateStore("menu", e.target.value)}
-                placeholder="예: 갈비탕 1 / 에어팟 프로 2 / 콘서트 R석"
-                rows={3}
-              />
+              <Textarea value={storeInfo.menu ?? ""} onChange={(e) => updateStore("menu", e.target.value)} placeholder="예: 갈비탕 1 / 에어팟 프로 2 / 콘서트 R석" rows={3} />
             </Field>
           </div>
         </Card>
@@ -369,15 +302,68 @@ export function Step2Info({ storeInfo, topicHint, photos, onChangeStore, onChang
   );
 }
 
-function Field({
+function RadioTab({
+  active,
+  disabled,
+  onClick,
+  icon,
   label,
-  help,
-  children,
+  sub,
 }: {
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
   label: string;
-  help?: string;
-  children: React.ReactNode;
+  sub: string;
 }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex flex-col items-center gap-1 py-3 rounded-lg border-2 transition-all text-center ${
+        active
+          ? "border-amber-500 bg-amber-50"
+          : disabled
+            ? "border-stone-200 bg-stone-50 opacity-50 cursor-not-allowed"
+            : "border-stone-200 hover:border-stone-300"
+      }`}
+    >
+      <div className={active ? "text-amber-600" : "text-stone-400"}>{icon}</div>
+      <div className={`text-xs font-medium ${active ? "text-amber-700" : "text-stone-600"}`}>{label}</div>
+      <div className="text-[10px] text-stone-400">{sub}</div>
+    </button>
+  );
+}
+
+function PlaceList({ results, onSelect }: { results: PlaceResult[]; onSelect: (p: PlaceResult) => void }) {
+  return (
+    <div className="rounded-lg border border-stone-200 overflow-hidden">
+      {results.map((r, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => onSelect(r)}
+          className="w-full text-left px-4 py-3 hover:bg-amber-50 border-b border-stone-100 last:border-b-0 transition-colors flex items-center gap-3"
+        >
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-sm">{r.name}</div>
+            {r.address && <div className="text-xs text-stone-500 mt-0.5 truncate">{r.address}</div>}
+            {(r.phone || r.hours) && (
+              <div className="text-xs text-stone-400 mt-0.5 truncate">
+                {[r.phone, r.hours].filter(Boolean).join(" · ")}
+              </div>
+            )}
+          </div>
+          <ChevronRight className="h-4 w-4 text-stone-300 shrink-0" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Field({ label, help, children }: { label: string; help?: string; children: React.ReactNode }) {
   return (
     <div>
       <label className="block text-sm font-medium text-stone-700 mb-1.5">{label}</label>
