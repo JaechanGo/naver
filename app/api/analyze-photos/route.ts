@@ -91,19 +91,26 @@ export async function POST(req: Request) {
     console.log("[analyze-photos] got response");
     const response = result.response;
     const candidate = response.candidates?.[0];
-    if (!candidate || !candidate.content?.parts?.length) {
-      const reason = candidate?.finishReason || "NO_CANDIDATE";
-      console.error("[analyze-photos] no candidate, reason:", reason);
+    const reason = candidate?.finishReason || "NO_CANDIDATE";
+    console.log("[analyze-photos] finishReason:", reason);
+
+    if (!candidate?.content?.parts?.length) {
+      console.error("[analyze-photos] no parts, reason:", reason);
       return NextResponse.json(
         { error: `AI 응답 없음 (reason: ${reason})` },
         { status: 502 },
       );
     }
-    resultText = response.text();
-    console.log("[analyze-photos] text length:", resultText.length);
+
+    resultText = candidate.content.parts
+      .filter((p: any) => p.text)
+      .map((p: any) => p.text)
+      .join("");
+    console.log("[analyze-photos] text length:", resultText.length, "preview:", resultText.slice(0, 100));
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Gemini 호출 실패";
-    console.error("[analyze-photos] error:", msg);
+    const stack = e instanceof Error ? e.stack?.slice(0, 300) : "";
+    console.error("[analyze-photos] error:", msg, stack);
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 
