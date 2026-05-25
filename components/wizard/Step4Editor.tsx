@@ -187,8 +187,8 @@ export function Step4Editor({ result, photos, onUpdateResult, onDone }: Props) {
           className="font-mono text-sm"
         />
 
-        <details className="mt-4 bg-white border border-stone-200 rounded-xl p-4">
-          <summary className="cursor-pointer text-sm font-medium">미리보기</summary>
+        <details open className="mt-4 bg-white border border-stone-200 rounded-xl p-4">
+          <summary className="cursor-pointer text-sm font-medium">▼ 미리보기</summary>
           <div
             className="prose prose-stone max-w-none mt-3"
             dangerouslySetInnerHTML={{ __html: html }}
